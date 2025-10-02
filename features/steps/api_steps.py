@@ -1,6 +1,7 @@
 from behave import step
 from jsonpath_ng import parse
 from common.payload_builder import *
+from common.utils import get_value_from_context
 
 
 @step('API: Send {method} {endpoint} request {condition} payload')
@@ -23,6 +24,7 @@ def api_send_request(context, method, endpoint, condition, path=None):
 
     assert condition in ["with", "without"], "Condition must be 'with' or 'without'"
 
+    endpoint = get_value_from_context(context, endpoint)
     payload = None
 
     if condition == "with":
@@ -106,7 +108,7 @@ def assert_api_status_code(context, condition, code):
             f"\n\tResponse text:\t{response.text}")
     else:
         assert actual_code != expected_code, (
-            f"Unexpected match:"
+            f"\nUnexpected match:"
             f"\n\tReceived and Expected status code are equal to {expected_code}")
 
 
@@ -138,20 +140,57 @@ def verify_api_response_values(context, condition):
         json_path = row["jsonPath"]
         expected_raw = row["value"]
 
-        expected_value = correct_json_values(expected_raw)
+        expected_from_context = get_value_from_context(context, expected_raw)
+
+        expected_value = str(correct_json_values(expected_from_context))
 
         expr = parse(json_path)
-        matches = [match.value for match in expr.find(resp_json)]
+        matches = [str(match.value) for match in expr.find(resp_json)]
 
         if condition == "should":
             assert matches, f"Expected value at {json_path}, but nothing was found."
             assert expected_value in matches, (
-                f"Expected value {expected_value} not found at {json_path}. "
+                f"\nExpected value {expected_value} not found at {json_path}. "
                 f"\nActual values: {matches}")
         else:
             if expected_value in matches:
                 raise AssertionError(
-                    f"Unexpected value {expected_value} found at {json_path}. "
+                    f"\nUnexpected value {expected_value} found at {json_path}. "
                     f"\nActual values: {matches}")
 
     print("Response values verified successfully.")
+
+
+@step('API: Save values from JSON response')
+def save_multiple_values_from_response(context):
+    """
+    Save multiple values from response to context using JSONPath.
+
+    Example:
+        * API: Save values from JSON response
+            | jsonPath | varName  |
+            | $.id     | user_id  |
+            | $.name   | name     |
+    """
+    response = getattr(context, "response", None)
+    assert response is not None, "No response object found in context"
+
+    try:
+        resp_json = response.json()
+    except Exception:
+        raise AssertionError("Response is not valid JSON:\n" + response.text)
+
+    for row in context.table:
+        json_path = row["jsonPath"]
+        var_name = row["varName"]
+
+        expr = parse(json_path)
+        matches = [match.value for match in expr.find(resp_json)]
+
+        assert matches, f"No match found for JSONPath: {json_path}"
+        if len(matches) > 1:
+            raise ValueError(f"Multiple values found at {json_path}. Use a more specific path.")
+
+        value = matches[0]
+        setattr(context, var_name, value)
+        print(f"Saved to context.{var_name} = {value}")
