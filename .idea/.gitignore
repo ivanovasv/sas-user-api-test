@@ -1,0 +1,13 @@
+# IDE config
+.idea/
+*.iml
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Env
+venv/
+.env
